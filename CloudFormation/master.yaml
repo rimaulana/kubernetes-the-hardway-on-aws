@@ -31,6 +31,11 @@ Parameters:
   HostedZoneId:
     Type: String
     Description: Private Route53 hosted zone id
+  
+  DomainName:
+    Type: String
+    Default: gresik.io
+    Description: DNS name
 
 Resources:
   LaunchConfig:
@@ -49,22 +54,88 @@ Resources:
             VolumeType: gp2
             DeleteOnTermination: true
   
-  NodeGroup:
+  AZ1:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      DesiredCapacity: '2'
+      DesiredCapacity: '1'
       LaunchConfigurationName: !Ref LaunchConfig
-      MinSize: '2'
-      MaxSize: '2'
+      MinSize: '1'
+      MaxSize: '1'
       VPCZoneIdentifier:
-        Fn::Split:
-        - ','
-        - !Ref PrivateSubnets
+      - Fn::Select:
+        - 0
+        - Fn::Split:
+          - ','
+          - !Ref PrivateSubnets
       TargetGroupARNs:
       - !Ref DefaultTargetGroup
       Tags:
       - Key: Name
-        Value: !Sub "${ClusterName}-node"
+        Value: !Sub "master-1.${DomainName}"
+        PropagateAtLaunch: true
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: 'owned'
+        PropagateAtLaunch: true
+      - Key: auto-delete
+        Value: "no"
+        PropagateAtLaunch: true
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 5
+  
+  AZ2:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: '1'
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: '1'
+      MaxSize: '1'
+      VPCZoneIdentifier:
+      - Fn::Select:
+        - 1
+        - Fn::Split:
+          - ','
+          - !Ref PrivateSubnets
+      TargetGroupARNs:
+      - !Ref DefaultTargetGroup
+      Tags:
+      - Key: Name
+        Value: !Sub "master-2.${DomainName}"
+        PropagateAtLaunch: true
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: 'owned'
+        PropagateAtLaunch: true
+      - Key: auto-delete
+        Value: "no"
+        PropagateAtLaunch: true
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 5
+  
+  AZ3:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: '1'
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: '1'
+      MaxSize: '1'
+      VPCZoneIdentifier:
+      - Fn::Select:
+        - 1
+        - Fn::Split:
+          - ','
+          - !Ref PrivateSubnets
+      TargetGroupARNs:
+      - !Ref DefaultTargetGroup
+      Tags:
+      - Key: Name
+        Value: !Sub "master-3.${DomainName}"
         PropagateAtLaunch: true
       - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
         Value: 'owned'
