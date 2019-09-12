@@ -1,0 +1,31 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Route53 private hosted zone
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: gresik.io
+    Description: The domain name
+  
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID to be associated with the hosted zone
+
+Resources:
+  DNS:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      HostedZoneConfig:
+        Comment: Private hosted zone for Kubernetes the hard way on AWS
+      Name: !Ref DomainName
+      VPCs:
+      - VPCId: !Ref VpcId
+        VPCRegion: !Ref AWS::Region
+
+Outputs:
+  HostedZoneID:
+    Description: >-
+      Exported Hosted Zone ID
+    Value: !Ref DNS

@@ -1,0 +1,235 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Main Stack for Kubernetes the hard way on AWS
+Parameters:
+  ClusterName:
+    Type: String
+    Description: Give the name of Kubernetes cluster (this is important for tagging
+      the resources)
+  PrimaryVpcCidr:
+    Type: String
+    Default: 10.123.0.0/16
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define primary CIDR range for the VPC. This should be a valid private
+      (RFC 1918) CIDR range.
+  PublicSubnet01Block:
+    Type: String
+    Default: 10.123.61.0/24
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define the first CIDR block on primary VPC CIDR for public subnet
+      where external load balancer and proxy server will reside
+  PublicSubnet02Block:
+    Type: String
+    Default: 10.123.62.0/24
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define the second CIDR block on primary VPC CIDR for public subnet
+      where external load balancer and proxy server will reside
+  PublicSubnet03Block:
+    Type: String
+    Default: 10.123.63.0/24
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define the third CIDR block on primary VPC CIDR for public subnet
+      where external load balancer and proxy server will reside
+  PrivateSubnet01Block:
+    Type: String
+    Default: 10.123.64.0/18
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define the first CIDR block on primary VPC CIDR for private subnet
+      where internal load balancer, worker node, pod networking and proxy NLB will
+      reside
+  PrivateSubnet02Block:
+    Type: String
+    Default: 10.123.128.0/18
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define the second CIDR block on primary VPC CIDR for private subnet
+      where internal load balancer, worker node, pod networking and proxy NLB will
+      reside
+  PrivateSubnet03Block:
+    Type: String
+    Default: 10.123.192.0/18
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define the third CIDR block on primary VPC CIDR for private subnet
+      where internal load balancer, worker node, pod networking and proxy NLB will
+      reside
+  DomainName:
+    Type: String
+    Default: gresik.io
+    Description: The domain name
+  AllowedSshCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define the CIDR block where proxy server will open its SSH port for.
+  BastionInstanceType:
+    Type: String
+    Default: t2.nano
+    Description: Choose bastion host instance type.
+    AllowedValues:
+    - t1.micro
+    - t2.nano
+    - t2.micro
+    - t2.small
+    - t2.medium
+  BastionAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+    Description: DO NOT CHANGE - this variable will configure proxy server AMI to
+      the latest Amazon Linux 2 AMI ID
+  KeyName:
+    Type: String
+    Default: rmaulan-testbed
+    Description: SSH key name to enable SSH access to proxy server and worker nodes
+  Switch:
+    Type: String
+    Default: 'on'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: Kubernetes Cluster Configurations
+      Parameters:
+      - ClusterName
+      - DomainName
+    - Label:
+        default: VPC Configurations
+      Parameters:
+      - PrimaryVpcCidr
+      - PublicSubnet01Block
+      - PublicSubnet02Block
+      - PublicSubnet03Block
+      - PrivateSubnet01Block
+      - PrivateSubnet02Block
+      - PrivateSubnet03Block
+Conditions:
+  CreateResource:
+    Fn::Equals:
+    - Ref: Switch
+    - 'on'
+Resources:
+  Vpc:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/gresik/d1d75a857468c3be3be1bbc2bd32130b.template
+      Parameters:
+        ClusterName:
+          Ref: ClusterName
+        PrimaryVpcCidr:
+          Ref: PrimaryVpcCidr
+        PublicSubnet01Block:
+          Ref: PublicSubnet01Block
+        PublicSubnet02Block:
+          Ref: PublicSubnet02Block
+        PublicSubnet03Block:
+          Ref: PublicSubnet03Block
+        PrivateSubnet01Block:
+          Ref: PrivateSubnet01Block
+        PrivateSubnet02Block:
+          Ref: PrivateSubnet02Block
+        PrivateSubnet03Block:
+          Ref: PrivateSubnet03Block
+      Tags:
+      - Key: auto-delete
+        Value: 'no'
+  Route53:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/gresik/12a4951a2aa027b965e6734f477c423f.template
+      Parameters:
+        DomainName:
+          Ref: DomainName
+        VpcId:
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.Id
+  Bastion:
+    Type: AWS::CloudFormation::Stack
+    Condition: CreateResource
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/gresik/90fc5b64892ac13c624497f1a909ed7e.template
+      Parameters:
+        ClusterName:
+          Ref: ClusterName
+        VpcId:
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.Id
+        PublicSubnets:
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.PublicSubnetIds
+        BastionSecurityGroup:
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.BastionHostSecurityGroup
+        KeyName:
+          Ref: KeyName
+        BastionInstanceType:
+          Ref: BastionInstanceType
+        BastionAmiId:
+          Ref: BastionAmiId
+        AllowSSHFrom:
+          Ref: AllowedSshCidr
+      Tags:
+      - Key: auto-delete
+        Value: 'no'
+  Master:
+    Type: AWS::CloudFormation::Stack
+    Condition: CreateResource
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/gresik/a2af4c7949b3242004981993a1279eb8.template
+      Parameters:
+        ClusterName:
+          Ref: ClusterName
+        VpcId:
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.Id
+        PrivateSubnets:
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.PrivateSubnetIds
+        MasterSecurityGroup:
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.MasterSecurityGroup
+        KeyName:
+          Ref: KeyName
+        MasterAmiId:
+          Ref: BastionAmiId
+        HostedZoneId:
+          Fn::GetAtt:
+          - Route53
+          - Outputs.HostedZoneID
+      Tags:
+      - Key: auto-delete
+        Value: 'no'
+  Etcd:
+    Type: AWS::CloudFormation::Stack
+    Condition: CreateResource
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/gresik/82cad3ebc9daf7799b8d4dbf99dd97a2.template
+      Parameters:
+        ClusterName:
+          Ref: ClusterName
+        VpcId:
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.Id
+        PrivateSubnets:
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.PrivateSubnetIds
+        EtcdSecurityGroup:
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.ETCDSecurityGroup
+        KeyName:
+          Ref: KeyName
+        AmiId:
+          Ref: BastionAmiId
+        HostedZoneId:
+          Fn::GetAtt:
+          - Route53
+          - Outputs.HostedZoneID
+      Tags:
+      - Key: auto-delete
+        Value: 'no'

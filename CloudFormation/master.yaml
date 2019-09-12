@@ -1,0 +1,129 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Kubernetes Master Nodes
+
+Parameters:
+  ClusterName:
+    Description: The cluster name provided when the cluster was created. If it is incorrect, nodes will not be able to join the cluster.
+    Type: String
+
+  MasterSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: Choose security group for worker node
+
+  PrivateSubnets:
+    Type: String
+    Description: Define private subnets on VPC for proxy server, multiple Subnet Ids separated by comma subnet-123,subnet-456
+
+  KeyName:
+    Description: The EC2 Key Pair to allow SSH access to the instances
+    Type: AWS::EC2::KeyPair::KeyName
+  
+  MasterAmiId:
+    Type: AWS::EC2::Image::Id
+    Description: Define AWS Linux 2 ImageId for bastion host
+  
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID to be associated with the hosted zone
+
+  HostedZoneId:
+    Type: String
+    Description: Private Route53 hosted zone id
+
+Resources:
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      AssociatePublicIpAddress: false
+      ImageId: !Ref MasterAmiId
+      InstanceType: t3.xlarge
+      KeyName: !Ref KeyName
+      SecurityGroups:
+      - !Ref MasterSecurityGroup
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 50
+            VolumeType: gp2
+            DeleteOnTermination: true
+  
+  NodeGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: '2'
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: '2'
+      MaxSize: '2'
+      VPCZoneIdentifier:
+        Fn::Split:
+        - ','
+        - !Ref PrivateSubnets
+      TargetGroupARNs:
+      - !Ref DefaultTargetGroup
+      Tags:
+      - Key: Name
+        Value: !Sub "${ClusterName}-node"
+        PropagateAtLaunch: true
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: 'owned'
+        PropagateAtLaunch: true
+      - Key: auto-delete
+        Value: "no"
+        PropagateAtLaunch: true
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 5
+  
+  DefaultTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      HealthCheckProtocol: HTTPS
+      Port: 443
+      Protocol: TCP
+      TargetType: instance
+      Tags:
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: 'shared'
+
+  NetworkLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      Scheme: internal
+      LoadBalancerAttributes:
+      - Key: load_balancing.cross_zone.enabled
+        Value: 'true'
+      Subnets:
+        Fn::Split:
+        - ','
+        - !Ref PrivateSubnets
+      Type: network
+      Tags:
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: 'shared'
+
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref NetworkLoadBalancer
+      Port: 443
+      Protocol: TCP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref DefaultTargetGroup
+  
+  DnsName:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+        DNSName: !GetAtt NetworkLoadBalancer.DNSName
+        HostedZoneId: !GetAtt NetworkLoadBalancer.CanonicalHostedZoneID
+      HostedZoneId: !Ref HostedZoneId
+      Name: master.gresik.io
+      Type: A

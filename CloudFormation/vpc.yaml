@@ -1,0 +1,626 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  VPC with public and private subnets spreads in 3 different AZs
+
+Parameters:
+
+  ClusterName:
+    Type: String
+    Description: Give the name of Kubernetes cluster (this is important for tagging the resources)
+
+  PrimaryVpcCidr:
+    Type: String
+    Default: 10.123.0.0/16
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define primary CIDR range for the VPC. This should be a valid private (RFC 1918) CIDR range.
+
+  PublicSubnet01Block:
+    Type: String
+    Default: 10.123.61.0/24
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define the first CIDR block on primary VPC CIDR for public subnet where external load balancer and proxy server will reside
+
+  PublicSubnet02Block:
+    Type: String
+    Default: 10.123.62.0/24
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define the second CIDR block on primary VPC CIDR for public subnet where external load balancer and proxy server will reside
+
+  PublicSubnet03Block:
+    Type: String
+    Default: 10.123.63.0/24
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define the third CIDR block on primary VPC CIDR for public subnet where external load balancer and proxy server will reside
+
+  PrivateSubnet01Block:
+    Type: String
+    Default: 10.123.64.0/18
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define the first CIDR block on primary VPC CIDR for private subnet where internal load balancer, worker node, pod networking and proxy NLB will reside
+
+  PrivateSubnet02Block:
+    Type: String
+    Default: 10.123.128.0/18
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define the second CIDR block on primary VPC CIDR for private subnet where internal load balancer, worker node, pod networking and proxy NLB will reside
+
+  PrivateSubnet03Block:
+    Type: String
+    Default: 10.123.192.0/18
+    AllowedPattern: ^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$
+    Description: Define the third CIDR block on primary VPC CIDR for private subnet where internal load balancer, worker node, pod networking and proxy NLB will reside
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+    - Label:
+        default: "Kubernetes Cluster Configurations"
+      Parameters:
+      - ClusterName
+
+    - Label:
+        default: "VPC Configurations"
+      Parameters:
+      - PrimaryVpcCidr
+      - PublicSubnet01Block
+      - PublicSubnet02Block
+      - PublicSubnet03Block
+      - PrivateSubnet01Block
+      - PrivateSubnet02Block
+      - PrivateSubnet03Block
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock:  !Ref PrimaryVpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+      - Key: Name
+        Value: !Sub '${ClusterName}-in-${AWS::Region}'
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: shared
+      - Key: auto-delete
+        Value: "no"
+  
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: auto-delete
+        Value: "no"
+
+  ElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGateway:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: 
+        Fn::GetAtt: 
+        - ElasticIP
+        - AllocationId
+      SubnetId:
+        Ref: PublicSubnet01
+      Tags:
+      - Key: Name
+        Value: 
+          Fn::Join:
+          - ""
+          - - !Sub '${ClusterName}-in-'
+            - Fn::Select:
+              - 0
+              - Fn::GetAZs: !Ref AWS::Region
+      - Key: auto-delete
+        Value: "no"
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub '${ClusterName}-public-in-${AWS::Region}'
+      - Key: Network
+        Value: public
+      - Key: auto-delete
+        Value: "no"
+  
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: 
+          Fn::Join:
+          - ""
+          - - !Sub '${ClusterName}-private-in-'
+            - Fn::Select:
+              - 0
+              - Fn::GetAZs: !Ref AWS::Region
+      - Key: Network
+        Value: private
+      - Key: auto-delete
+        Value: "no"
+
+  PublicRoute:
+    DependsOn: VPCGatewayAttachment
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  NatRoute:
+    DependsOn: VPCGatewayAttachment
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGateway
+
+  PublicSubnet01:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Public Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - 0
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      MapPublicIpOnLaunch: true
+      CidrBlock:
+        Ref: PublicSubnet01Block
+      VpcId:
+        Ref: VPC
+      Tags:
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: shared
+      - Key: kubernetes.io/role/elb
+        Value: "1"
+      - Key: Name
+        Value: 
+          Fn::Join:
+          - ""
+          - - !Sub '${ClusterName}-public-in-'
+            - Fn::Select:
+              - 0
+              - Fn::GetAZs: !Ref AWS::Region
+      - Key: auto-delete
+        Value: "no"
+
+  PublicSubnet02:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Public Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - 1
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      MapPublicIpOnLaunch: true
+      CidrBlock:
+        Ref: PublicSubnet02Block
+      VpcId:
+        Ref: VPC
+      Tags:
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: shared
+      - Key: kubernetes.io/role/elb
+        Value: "1"
+      - Key: Name
+        Value: 
+          Fn::Join:
+          - ""
+          - - !Sub '${ClusterName}-public-in-'
+            - Fn::Select:
+              - 1
+              - Fn::GetAZs: !Ref AWS::Region
+      - Key: auto-delete
+        Value: "no"
+
+  PublicSubnet03:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Public Subnet
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - 2 
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      MapPublicIpOnLaunch: true
+      CidrBlock:
+        Ref: PublicSubnet03Block
+      VpcId:
+        Ref: VPC
+      Tags:
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: shared
+      - Key: kubernetes.io/role/elb
+        Value: "1"
+      - Key: Name
+        Value: 
+          Fn::Join:
+          - ""
+          - - !Sub '${ClusterName}-public-in-'
+            - Fn::Select:
+              - 2
+              - Fn::GetAZs: !Ref AWS::Region
+      - Key: auto-delete
+        Value: "no"
+
+  PrivateSubnet01:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Subnet 01
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - 0
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock:
+        Ref: PrivateSubnet01Block
+      VpcId:
+        Ref: VPC
+      Tags:
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: shared
+      - Key: kubernetes.io/role/internal-elb
+        Value: "1"
+      - Key: Name
+        Value: 
+          Fn::Join:
+          - ""
+          - - !Sub '${ClusterName}-private-in-'
+            - Fn::Select:
+              - 0
+              - Fn::GetAZs: !Ref AWS::Region
+      - Key: auto-delete
+        Value: "no"
+
+  PrivateSubnet02:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Subnet 02
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - 1
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock:
+        Ref: PrivateSubnet02Block
+      VpcId:
+        Ref: VPC
+      Tags:
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: shared
+      - Key: kubernetes.io/role/internal-elb
+        Value: "1"
+      - Key: Name
+        Value: 
+          Fn::Join:
+          - ""
+          - - !Sub '${ClusterName}-private-in-'
+            - Fn::Select:
+              - 1
+              - Fn::GetAZs: !Ref AWS::Region
+      - Key: auto-delete
+        Value: "no"
+
+  PrivateSubnet03:
+    Type: AWS::EC2::Subnet
+    Metadata:
+      Comment: Subnet 03
+    Properties:
+      AvailabilityZone:
+        Fn::Select:
+        - 2
+        - Fn::GetAZs:
+            Ref: AWS::Region
+      CidrBlock:
+        Ref: PrivateSubnet03Block
+      VpcId:
+        Ref: VPC
+      Tags:
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: shared
+      - Key: kubernetes.io/role/internal-elb
+        Value: "1"
+      - Key: Name
+        Value: 
+          Fn::Join:
+          - ""
+          - - !Sub '${ClusterName}-private-in-'
+            - Fn::Select:
+              - 2
+              - Fn::GetAZs: !Ref AWS::Region
+      - Key: auto-delete
+        Value: "no"
+
+  PublicSubnet01RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet01
+      RouteTableId: !Ref PublicRouteTable
+    
+  PublicSubnet02RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet02
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet03RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet03
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnet01RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet01
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet02RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet02
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet03RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet03
+      RouteTableId: !Ref PrivateRouteTable
+
+  ControlPlaneSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Cluster communication with worker nodes
+      VpcId: !Ref VPC
+      Tags:
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: shared
+      - Key: Name
+        Value: !Sub '${ClusterName}-control-plane-sg'
+      - Key: auto-delete
+        Value: "no"
+  
+  NodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for all nodes in the cluster
+      VpcId: !Ref VPC
+      Tags:
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: shared
+      - Key: Name
+        Value: !Sub "${ClusterName}-worker-sg"
+      - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+        Value: 'owned'
+      - Key: auto-delete
+        Value: "no"
+  
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group that allow bastion to ssh to worker node
+      VpcId: !Ref VPC
+      Tags:
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: shared
+      - Key: Name
+        Value: !Sub "${ClusterName}-bastion-sg"
+      - Key: auto-delete
+        Value: "no"
+  
+  EtcdSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ETCD instances
+      VpcId: !Ref VPC
+      Tags:
+      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
+        Value: shared
+      - Key: Name
+        Value: !Sub "${ClusterName}-etcd-sg"
+      - Key: !Sub "kubernetes.io/cluster/${ClusterName}"
+        Value: 'owned'
+      - Key: auto-delete
+        Value: "no"
+
+  EtcdSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow ETCD node to communicate with each other
+      GroupId: !Ref EtcdSecurityGroup
+      SourceSecurityGroupId: !Ref EtcdSecurityGroup
+      IpProtocol: tcp
+      FromPort: 2380
+      ToPort: 2380
+  
+  EtcdSecurityGroupIngressNLB:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow ETCD node to contacted through NLB 
+      GroupId: !Ref EtcdSecurityGroup
+      CidrIp: !Ref PrimaryVpcCidr
+      IpProtocol: tcp
+      FromPort: 2379
+      ToPort: 2379
+  
+  ControlPlaneSecurityGroupIngressNLB:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow master node to be contacted through NLB 
+      GroupId: !Ref ControlPlaneSecurityGroup
+      CidrIp: !Ref PrimaryVpcCidr
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+
+  NodeSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow node to communicate with each other
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: '-1'
+      FromPort: 0
+      ToPort: 65535
+  
+  NodeSecurityGroupFromBastionIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow Bastion to SSH to worker node
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref BastionSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+
+  ControlPlaneSecurityGroupFromBastionIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow Bastion to SSH to master node
+      GroupId: !Ref ControlPlaneSecurityGroup
+      SourceSecurityGroupId: !Ref BastionSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+
+  EtcdSecurityGroupFromBastionIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow Bastion to SSH to master node
+      GroupId: !Ref EtcdSecurityGroup
+      SourceSecurityGroupId: !Ref BastionSecurityGroup
+      IpProtocol: tcp
+      FromPort: 22
+      ToPort: 22
+
+  NodeSecurityGroupFromControlPlaneIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow worker Kubelets and pods to receive communication from the cluster control plane
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref ControlPlaneSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+
+  ControlPlaneEgressToNodeSecurityGroup:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      Description: Allow the cluster control plane to communicate with worker Kubelet and pods
+      GroupId: !Ref ControlPlaneSecurityGroup
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      FromPort: 1025
+      ToPort: 65535
+
+  NodeSecurityGroupFromControlPlaneOn443Ingress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow pods running extension API servers on port 443 to receive communication from cluster control plane
+      GroupId: !Ref NodeSecurityGroup
+      SourceSecurityGroupId: !Ref ControlPlaneSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+
+  ControlPlaneEgressToNodeSecurityGroupOn443:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      Description: Allow the cluster control plane to communicate with pods running extension API servers on port 443
+      GroupId: !Ref ControlPlaneSecurityGroup
+      DestinationSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+
+  ClusterControlPlaneSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Allow pods to communicate with the cluster API Server
+      GroupId: !Ref ControlPlaneSecurityGroup
+      SourceSecurityGroupId: !Ref NodeSecurityGroup
+      IpProtocol: tcp
+      ToPort: 443
+      FromPort: 443
+
+Outputs:
+
+  AllSubnetIds:
+    Description: >-
+      All subnets in the VPC 
+    Value: 
+      Fn::Join:
+      - ","
+      - - !Ref PrivateSubnet01
+        - !Ref PrivateSubnet02
+        - !Ref PrivateSubnet03
+        - !Ref PublicSubnet01
+        - !Ref PublicSubnet02
+        - !Ref PublicSubnet03
+  
+  PrivateSubnetIds:
+    Description: >-
+      Collection of private subnet id where worker node will be placed
+    Value:
+      Fn::Join:
+      - ','
+      - - !Ref PrivateSubnet01
+        - !Ref PrivateSubnet02
+        - !Ref PrivateSubnet03
+
+  PublicSubnetIds:
+    Description: >-
+      Collection of public subnet id
+    Value:
+      Fn::Join:
+      - ','
+      - - !Ref PublicSubnet01
+        - !Ref PublicSubnet02
+        - !Ref PublicSubnet03
+
+  MasterSecurityGroup:
+    Description: >-
+      Security group for the cluster control plane communication with worker nodes
+    Value: !Ref ControlPlaneSecurityGroup
+  
+  ETCDSecurityGroup:
+    Description: >-
+      Security group for the cluster control plane communication with worker nodes
+    Value: !Ref EtcdSecurityGroup
+  
+  WorkerNodeSecurityGroup:
+    Description: >-
+      Security group for worker nodes
+    Value: !Ref NodeSecurityGroup
+  
+  BastionHostSecurityGroup:
+    Description: >-
+      Security group allowing bastion to SSH to worker node
+    Value: !Ref BastionSecurityGroup
+
+  Id:
+    Description: >-
+      Exported VPC id
+    Value: !Ref VPC
