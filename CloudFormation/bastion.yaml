@@ -69,6 +69,45 @@ Metadata:
         - AllowSSHFrom
 
 Resources:
+  BastionInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - !Ref BastionInstanceRole
+
+  BastionInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: key-download
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 's3:ListAllMyBuckets'
+            Resource: 'arn:aws:s3:::*'
+          - Effect: Allow
+            Action:
+            - 's3:ListBucket'
+            - 's3:GetBucketLocation'
+            Resource: 'arn:aws:s3:::gresik'
+          - Effect: Allow
+            Action:
+            - 's3:GetObject'
+            Resource: 'arn:aws:s3:::gresik/keys/rmaulan-testbed.pem'
+
   PublicBastionSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -91,6 +130,7 @@ Resources:
     Properties:
       ImageId: !Ref BastionAmiId
       InstanceType: !Ref BastionInstanceType
+      IamInstanceProfile: !Ref BastionInstanceProfile
       KeyName: !Ref KeyName
       SubnetId:
         Fn::Select:
@@ -101,15 +141,19 @@ Resources:
       SecurityGroupIds:
       - !Ref PublicBastionSG
       - !Ref BastionSecurityGroup
-      # UserData:
-      #   Fn::Base64: |
-      #     #!/bin/bash
-      #     set -o xtrace
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash
+          set -o xtrace
 
-      #     # Download kubectl
-      #     wget https://storage.googleapis.com/kubernetes-release/release/v1.14.0/bin/linux/amd64/kubectl
-      #     chmod +x kubectl
-      #     mv kubectl /usr/local/bin
+          # Download kubectl
+          wget https://storage.googleapis.com/kubernetes-release/release/v1.14.0/bin/linux/amd64/kubectl
+          chmod +x kubectl
+          mv kubectl /usr/local/bin
+
+          # Download SSH key
+          aws s3 cp s3://gresik/keys/rmaulan-testbed.pem /home/ec2-user/.ssh/id_rsa
+          chmod 400 /home/ec2-user/.ssh/id_rsa
       Tags:
       - Key: Name 
         Value: EKS Bastion
