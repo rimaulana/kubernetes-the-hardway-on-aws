@@ -525,15 +525,15 @@ Resources:
       FromPort: 1025
       ToPort: 65535
 
-  ControlPlaneEgressToNodeSecurityGroup:
+  ControlPlaneEgressToAnywhere:
     Type: AWS::EC2::SecurityGroupEgress
     Properties:
       Description: Allow the cluster control plane to communicate with worker Kubelet and pods
       GroupId: !Ref ControlPlaneSecurityGroup
-      DestinationSecurityGroupId: !Ref NodeSecurityGroup
-      IpProtocol: tcp
-      FromPort: 1025
-      ToPort: 65535
+      CidrIp: 0.0.0.0/0
+      IpProtocol: '-1'
+      FromPort: -1
+      ToPort: -1
 
   NodeSecurityGroupFromControlPlaneOn443Ingress:
     Type: AWS::EC2::SecurityGroupIngress
@@ -541,16 +541,6 @@ Resources:
       Description: Allow pods running extension API servers on port 443 to receive communication from cluster control plane
       GroupId: !Ref NodeSecurityGroup
       SourceSecurityGroupId: !Ref ControlPlaneSecurityGroup
-      IpProtocol: tcp
-      FromPort: 443
-      ToPort: 443
-
-  ControlPlaneEgressToNodeSecurityGroupOn443:
-    Type: AWS::EC2::SecurityGroupEgress
-    Properties:
-      Description: Allow the cluster control plane to communicate with pods running extension API servers on port 443
-      GroupId: !Ref ControlPlaneSecurityGroup
-      DestinationSecurityGroupId: !Ref NodeSecurityGroup
       IpProtocol: tcp
       FromPort: 443
       ToPort: 443

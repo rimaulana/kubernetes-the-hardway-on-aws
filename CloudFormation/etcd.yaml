@@ -38,12 +38,64 @@ Parameters:
     Description: DNS name
 
 Resources:
+  EtcdInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: "/"
+      Roles:
+      - !Ref EtcdInstanceRole
+
+  EtcdInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - ec2.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: route53
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 'route53:ChangeResourceRecordSets'
+            Resource: !Sub 'arn:aws:route53:::hostedzone/${HostedZoneId}'
+          - Effect: Allow
+            Action:
+            - 'ec2:DescribeTags'
+            Resource: '*'
+      - PolicyName: route53-json-download
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 's3:ListAllMyBuckets'
+            Resource: 'arn:aws:s3:::*'
+          - Effect: Allow
+            Action:
+            - 's3:ListBucket'
+            - 's3:GetBucketLocation'
+            Resource: 'arn:aws:s3:::gresik'
+          - Effect: Allow
+            Action:
+            - 's3:GetObject'
+            Resource: 'arn:aws:s3:::gresik/configs/record.json'
+
   LaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       AssociatePublicIpAddress: false
       ImageId: !Ref AmiId
       InstanceType: t3.xlarge
+      IamInstanceProfile: !Ref EtcdInstanceProfile
       KeyName: !Ref KeyName
       SecurityGroups:
       - !Ref EtcdSecurityGroup
@@ -53,6 +105,20 @@ Resources:
             VolumeSize: 50
             VolumeType: gp2
             DeleteOnTermination: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          instance_id=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+          ip_addr=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
+          name=$(aws ec2 describe-tags --region ${AWS::Region} --filters "Name=resource-id,Values=$instance_id" 'Name=key,Values=Name' --query 'Tags[].Value' --output text)
+
+          hostnamectl set-hostname $name
+
+          aws s3 cp s3://gresik/configs/record.json /tmp
+          sed -i s,HOSTNAME,$name,g /tmp/record.json
+          sed -i s,IP_ADDRESS,$ip_addr,g /tmp/record.json
+
+          aws route53 change-resource-record-sets --hosted-zone-id ${HostedZoneId} --change-batch file:///tmp/record.json
   
   AZ1:
     Type: AWS::AutoScaling::AutoScalingGroup
