@@ -87,7 +87,9 @@ Resources:
           - Effect: Allow
             Action:
             - 's3:GetObject'
-            Resource: 'arn:aws:s3:::gresik/configs/record.json'
+            Resource: 
+            - 'arn:aws:s3:::gresik/configs/record.json'
+            - 'arn:aws:s3:::gresik/configs/etcd/*'
 
   LaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
