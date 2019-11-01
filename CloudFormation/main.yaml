@@ -77,6 +77,11 @@ Parameters:
     Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
     Description: DO NOT CHANGE - this variable will configure proxy server AMI to the latest Amazon Linux 2 AMI ID
   
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-0994c095691a46fb5
+    Description: AMI for etcd and kubeapi-server
+  
   KeyName:
     Type: String
     Default: rmaulan-testbed
@@ -188,7 +193,7 @@ Resources:
           - Vpc
           - Outputs.MasterSecurityGroup
         KeyName: !Ref KeyName
-        MasterAmiId: !Ref BastionAmiId
+        MasterAmiId: !Ref AmiId
         HostedZoneId: 
           Fn::GetAtt:
           - Route53
@@ -217,7 +222,7 @@ Resources:
           - Vpc
           - Outputs.ETCDSecurityGroup
         KeyName: !Ref KeyName
-        AmiId: !Ref BastionAmiId
+        AmiId: !Ref AmiId
         HostedZoneId: 
           Fn::GetAtt:
           - Route53

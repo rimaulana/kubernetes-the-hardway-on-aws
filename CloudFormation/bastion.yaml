@@ -154,6 +154,7 @@ Resources:
           # Download SSH key
           aws s3 cp s3://gresik/keys/rmaulan-testbed.pem /home/ec2-user/.ssh/id_rsa
           chmod 400 /home/ec2-user/.ssh/id_rsa
+          chown ec2-user:ec2-user /home/ec2-user/.ssh/id_rsa
       Tags:
       - Key: Name 
         Value: EKS Bastion
