@@ -90,6 +90,7 @@ Resources:
             Resource: 
             - 'arn:aws:s3:::gresik/configs/record.json'
             - 'arn:aws:s3:::gresik/configs/etcd/*'
+            - 'arn:aws:s3:::gresik/certificates/*'
 
   LaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
@@ -199,7 +200,7 @@ Resources:
       MaxSize: '1'
       VPCZoneIdentifier:
       - Fn::Select:
-        - 1
+        - 2
         - Fn::Split:
           - ','
           - !Ref PrivateSubnets
@@ -227,7 +228,7 @@ Resources:
     Properties:
       VpcId: !Ref VpcId
       HealthCheckProtocol: TCP
-      Port: 2380
+      Port: 2379
       Protocol: TCP
       TargetType: instance
       Tags:
@@ -252,7 +253,7 @@ Resources:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
       LoadBalancerArn: !Ref NetworkLoadBalancer
-      Port: 2380
+      Port: 2379
       Protocol: TCP
       DefaultActions:
         - Type: forward

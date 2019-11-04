@@ -1,14 +1,14 @@
 ---
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
-  Kubernetes Master Nodes
+  Kubernetes Worker Node Instances
 
 Parameters:
   ClusterName:
     Description: The cluster name provided when the cluster was created. If it is incorrect, nodes will not be able to join the cluster.
     Type: String
 
-  MasterSecurityGroup:
+  NodeSecurityGroup:
     Type: AWS::EC2::SecurityGroup::Id
     Description: Choose security group for worker node
 
@@ -20,14 +20,10 @@ Parameters:
     Description: The EC2 Key Pair to allow SSH access to the instances
     Type: AWS::EC2::KeyPair::KeyName
   
-  MasterAmiId:
+  AmiId:
     Type: AWS::EC2::Image::Id
     Description: Define AWS Linux 2 ImageId for bastion host
   
-  VpcId:
-    Type: AWS::EC2::VPC::Id
-    Description: VPC ID to be associated with the hosted zone
-
   HostedZoneId:
     Type: String
     Description: Private Route53 hosted zone id
@@ -38,14 +34,14 @@ Parameters:
     Description: DNS name
 
 Resources:
-  MasterInstanceProfile:
+  NodeInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
       Path: "/"
       Roles:
-      - !Ref MasterInstanceRole
+      - !Ref NodeInstanceRole
 
-  MasterInstanceRole:
+  NodeInstanceRole:
     Type: AWS::IAM::Role
     Properties:
       AssumeRolePolicyDocument:
@@ -58,9 +54,6 @@ Resources:
           Action:
           - sts:AssumeRole
       Path: "/"
-      ManagedPolicyArns:
-      - arn:aws:iam::aws:policy/AmazonEKSClusterPolicy
-      - arn:aws:iam::aws:policy/AmazonEKSServicePolicy
       Policies:
       - PolicyName: route53
         PolicyDocument:
@@ -91,6 +84,7 @@ Resources:
             Action:
             - 's3:GetObject'
             Resource: 
+            - 'arn:aws:s3:::gresik/configs/record.json'
             - 'arn:aws:s3:::gresik/configs/*'
             - 'arn:aws:s3:::gresik/certificates/*'
 
@@ -98,12 +92,12 @@ Resources:
     Type: AWS::AutoScaling::LaunchConfiguration
     Properties:
       AssociatePublicIpAddress: false
-      ImageId: !Ref MasterAmiId
+      ImageId: !Ref AmiId
       InstanceType: t3.xlarge
-      IamInstanceProfile: !Ref MasterInstanceProfile
+      IamInstanceProfile: !Ref NodeInstanceProfile
       KeyName: !Ref KeyName
       SecurityGroups:
-      - !Ref MasterSecurityGroup
+      - !Ref NodeSecurityGroup
       BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
@@ -116,6 +110,7 @@ Resources:
           sudo apt-get update
           sudo apt install python-pip -y
           sudo pip install awscli --upgrade
+          sudo apt-get -y install socat conntrack ipset
 
           instance_id=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
           ip_addr=$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)
@@ -142,11 +137,9 @@ Resources:
         - Fn::Split:
           - ','
           - !Ref PrivateSubnets
-      TargetGroupARNs:
-      - !Ref DefaultTargetGroup
       Tags:
       - Key: Name
-        Value: !Sub "master-1.${DomainName}"
+        Value: !Sub "node-1.${DomainName}"
         PropagateAtLaunch: true
       - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
         Value: 'owned'
@@ -174,11 +167,9 @@ Resources:
         - Fn::Split:
           - ','
           - !Ref PrivateSubnets
-      TargetGroupARNs:
-      - !Ref DefaultTargetGroup
       Tags:
       - Key: Name
-        Value: !Sub "master-2.${DomainName}"
+        Value: !Sub "node-2.${DomainName}"
         PropagateAtLaunch: true
       - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
         Value: 'owned'
@@ -193,51 +184,32 @@ Resources:
         MinInstancesInService: 1
         MaxBatchSize: 5
   
-  DefaultTargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+  AZ3:
+    Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      VpcId: !Ref VpcId
-      HealthCheckProtocol: TCP
-      Port: 6443
-      Protocol: TCP
-      TargetType: instance
+      DesiredCapacity: '1'
+      LaunchConfigurationName: !Ref LaunchConfig
+      MinSize: '1'
+      MaxSize: '1'
+      VPCZoneIdentifier:
+      - Fn::Select:
+        - 2
+        - Fn::Split:
+          - ','
+          - !Ref PrivateSubnets
       Tags:
+      - Key: Name
+        Value: !Sub "node-3.${DomainName}"
+        PropagateAtLaunch: true
       - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
-        Value: 'shared'
-
-  NetworkLoadBalancer:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Properties:
-      IpAddressType: ipv4
-      Scheme: internal
-      LoadBalancerAttributes:
-      - Key: load_balancing.cross_zone.enabled
-        Value: 'true'
-      Subnets:
-        Fn::Split:
-        - ','
-        - !Ref PrivateSubnets
-      Type: network
-      Tags:
-      - Key: !Sub 'kubernetes.io/cluster/${ClusterName}'
-        Value: 'shared'
-
-  LoadBalancerListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      LoadBalancerArn: !Ref NetworkLoadBalancer
-      Port: 443
-      Protocol: TCP
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref DefaultTargetGroup
-  
-  DnsName:
-    Type: AWS::Route53::RecordSet
-    Properties:
-      AliasTarget:
-        DNSName: !GetAtt NetworkLoadBalancer.DNSName
-        HostedZoneId: !GetAtt NetworkLoadBalancer.CanonicalHostedZoneID
-      HostedZoneId: !Ref HostedZoneId
-      Name: master.gresik.io
-      Type: A
+        Value: 'owned'
+        PropagateAtLaunch: true
+      - Key: auto-delete
+        Value: "no"
+        PropagateAtLaunch: true
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+      AutoScalingRollingUpdate:
+        MinInstancesInService: 1
+        MaxBatchSize: 5

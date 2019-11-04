@@ -8,6 +8,10 @@ Parameters:
   ClusterName:
     Type: String
     Description: Give the name of Kubernetes cluster (this is important for tagging the resources)
+  
+  DomainName:
+    Type: String
+    Description: Domain name for the VPC
 
   PrimaryVpcCidr:
     Type: String
@@ -62,6 +66,7 @@ Metadata:
     - Label:
         default: "VPC Configurations"
       Parameters:
+      - DomainName
       - PrimaryVpcCidr
       - PublicSubnet01Block
       - PublicSubnet02Block
@@ -84,6 +89,19 @@ Resources:
         Value: shared
       - Key: auto-delete
         Value: "no"
+  
+  DHCPOptions:
+    Type: AWS::EC2::DHCPOptions
+    Properties:
+      DomainName: !Ref DomainName
+      DomainNameServers:
+      - AmazonProvidedDNS
+  
+  DHCPAssociation:
+    Type: AWS::EC2::VPCDHCPOptionsAssociation
+    Properties:
+      DhcpOptionsId: !Ref DHCPOptions
+      VpcId: !Ref VPC
   
   InternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -472,8 +490,8 @@ Resources:
       GroupId: !Ref ControlPlaneSecurityGroup
       CidrIp: !Ref PrimaryVpcCidr
       IpProtocol: tcp
-      FromPort: 443
-      ToPort: 443
+      FromPort: 6443
+      ToPort: 6443
 
   NodeSecurityGroupIngress:
     Type: AWS::EC2::SecurityGroupIngress
@@ -552,8 +570,8 @@ Resources:
       GroupId: !Ref ControlPlaneSecurityGroup
       SourceSecurityGroupId: !Ref NodeSecurityGroup
       IpProtocol: tcp
-      ToPort: 443
-      FromPort: 443
+      ToPort: 6443
+      FromPort: 6443
 
 Outputs:
 

@@ -106,7 +106,9 @@ Resources:
           - Effect: Allow
             Action:
             - 's3:GetObject'
-            Resource: 'arn:aws:s3:::gresik/keys/rmaulan-testbed.pem'
+            Resource: 
+            - 'arn:aws:s3:::gresik/keys/rmaulan-testbed.pem'
+            - 'arn:aws:s3:::gresik/configs/*'
 
   PublicBastionSG:
     Type: AWS::EC2::SecurityGroup

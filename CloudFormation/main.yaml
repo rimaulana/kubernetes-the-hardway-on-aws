@@ -124,6 +124,7 @@ Resources:
       TemplateURL: ./vpc.yaml
       Parameters:
         ClusterName: !Ref ClusterName
+        DomainName: !Ref DomainName
         PrimaryVpcCidr: !Ref PrimaryVpcCidr
         PublicSubnet01Block: !Ref PublicSubnet01Block
         PublicSubnet02Block: !Ref PublicSubnet02Block
@@ -221,6 +222,31 @@ Resources:
           Fn::GetAtt:
           - Vpc
           - Outputs.ETCDSecurityGroup
+        KeyName: !Ref KeyName
+        AmiId: !Ref AmiId
+        HostedZoneId: 
+          Fn::GetAtt:
+          - Route53
+          - Outputs.HostedZoneID
+      Tags:
+      - Key: auto-delete
+        Value: "no"
+      
+  Node:
+    Type: AWS::CloudFormation::Stack
+    Condition: CreateResource
+    Properties:
+      TemplateURL: ./node.yaml
+      Parameters:
+        ClusterName: !Ref ClusterName
+        PrivateSubnets: 
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.PrivateSubnetIds
+        NodeSecurityGroup:
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.WorkerNodeSecurityGroup
         KeyName: !Ref KeyName
         AmiId: !Ref AmiId
         HostedZoneId: 

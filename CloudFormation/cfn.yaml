@@ -112,10 +112,12 @@ Resources:
   Vpc:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: https://s3.amazonaws.com/gresik/22990e1926adf04e6b13aae24e651ebe.template
+      TemplateURL: https://s3.amazonaws.com/gresik/ef0f1a7f917799959f5462dd096bdb4b.template
       Parameters:
         ClusterName:
           Ref: ClusterName
+        DomainName:
+          Ref: DomainName
         PrimaryVpcCidr:
           Ref: PrimaryVpcCidr
         PublicSubnet01Block:
@@ -148,7 +150,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: CreateResource
     Properties:
-      TemplateURL: https://s3.amazonaws.com/gresik/5e56400d7c719297307ee2eb1e83a2a7.template
+      TemplateURL: https://s3.amazonaws.com/gresik/f1380c26f0b2d33b86ff7fed03314a11.template
       Parameters:
         ClusterName:
           Ref: ClusterName
@@ -179,7 +181,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: CreateResource
     Properties:
-      TemplateURL: https://s3.amazonaws.com/gresik/a6ef83571328bcc5de91220fb003f6cc.template
+      TemplateURL: https://s3.amazonaws.com/gresik/806cad7bff189873b5e74f9c1e7155ce.template
       Parameters:
         ClusterName:
           Ref: ClusterName
@@ -210,7 +212,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Condition: CreateResource
     Properties:
-      TemplateURL: https://s3.amazonaws.com/gresik/f6e6d251050ba85d120ed3a58ea763a3.template
+      TemplateURL: https://s3.amazonaws.com/gresik/a192b545ea87e09b8cdecd3af108f335.template
       Parameters:
         ClusterName:
           Ref: ClusterName
@@ -226,6 +228,33 @@ Resources:
           Fn::GetAtt:
           - Vpc
           - Outputs.ETCDSecurityGroup
+        KeyName:
+          Ref: KeyName
+        AmiId:
+          Ref: AmiId
+        HostedZoneId:
+          Fn::GetAtt:
+          - Route53
+          - Outputs.HostedZoneID
+      Tags:
+      - Key: auto-delete
+        Value: 'no'
+  Node:
+    Type: AWS::CloudFormation::Stack
+    Condition: CreateResource
+    Properties:
+      TemplateURL: https://s3.amazonaws.com/gresik/afe5badac35cadde6e8596cee0a241ce.template
+      Parameters:
+        ClusterName:
+          Ref: ClusterName
+        PrivateSubnets:
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.PrivateSubnetIds
+        NodeSecurityGroup:
+          Fn::GetAtt:
+          - Vpc
+          - Outputs.WorkerNodeSecurityGroup
         KeyName:
           Ref: KeyName
         AmiId:
